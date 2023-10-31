@@ -33,6 +33,8 @@ enum {
     OPT_MAX_FPS,
     OPT_LOCK_VIDEO_ORIENTATION,
     OPT_DISPLAY_ID,
+    OPT_CAMERA_ID,
+    OPT_CAMERA_POSITION,
     OPT_ROTATION,
     OPT_RENDER_DRIVER,
     OPT_NO_MIPMAPS,
@@ -69,6 +71,7 @@ enum {
     OPT_AUDIO_ENCODER,
     OPT_LIST_ENCODERS,
     OPT_LIST_DISPLAYS,
+    OPT_LIST_CAMERAS,
     OPT_REQUIRE_AUDIO,
     OPT_AUDIO_BUFFER,
     OPT_AUDIO_OUTPUT_BUFFER,
@@ -76,6 +79,7 @@ enum {
     OPT_NO_VIDEO,
     OPT_NO_AUDIO_PLAYBACK,
     OPT_NO_VIDEO_PLAYBACK,
+    OPT_VIDEO_SOURCE,
     OPT_AUDIO_SOURCE,
     OPT_KILL_ADB_ON_CLOSE,
     OPT_TIME_LIMIT,
@@ -182,6 +186,14 @@ static const struct sc_option options[] = {
                 "Default is 5.",
     },
     {
+        .longopt_id = OPT_VIDEO_SOURCE,
+        .longopt = "video-source",
+        .argdesc = "source",
+        .text = "Select the video source (display or camera) to mirror.\n"
+                "Camera mirroring requires Android 12.\n"
+                "Default is display.",
+    },
+    {
         .shortopt = 'b',
         .longopt = "video-bit-rate",
         .argdesc = "value",
@@ -238,6 +250,23 @@ static const struct sc_option options[] = {
                 "The available display ids can be listed by:\n"
                 "    scrcpy --list-displays\n"
                 "Default is 0.",
+    },
+    {
+        .longopt_id = OPT_CAMERA_ID,
+        .longopt = "camera",
+        .argdesc = "id",
+        .text = "Specify the device camera id to mirror when using --video-source=camera.\n"
+                "The available camera ids can be listed by:\n"
+                "    scrcpy --list-cameras\n"
+                "Default is the first one.",
+    },
+    {
+        .longopt_id = OPT_CAMERA_POSITION,
+        .longopt = "camera-position",
+        .argdesc = "position",
+        .text = "Select the device camera to mirror by its physical position when using --video-source=camera.\n"
+                "Valid values are: all, front, back, external\n"
+                "Default is all.",
     },
     {
         .longopt_id = OPT_DISPLAY_BUFFER,
@@ -316,6 +345,11 @@ static const struct sc_option options[] = {
         .longopt_id = OPT_LIST_DISPLAYS,
         .longopt = "list-displays",
         .text = "List device displays.",
+    },
+    {
+        .longopt_id = OPT_LIST_CAMERAS,
+        .longopt = "list-cameras",
+        .text = "List device cameras.",
     },
     {
         .longopt_id = OPT_LIST_ENCODERS,
@@ -1626,6 +1660,48 @@ parse_audio_source(const char *optarg, enum sc_audio_source *source) {
 }
 
 static bool
+parse_video_source(const char *optarg, enum sc_video_source *source) {
+    if (!strcmp(optarg, "display")) {
+        *source = SC_VIDEO_SOURCE_DISPLAY;
+        return true;
+    }
+
+    if (!strcmp(optarg, "camera")) {
+        *source = SC_VIDEO_SOURCE_CAMERA;
+        return true;
+    }
+
+    LOGE("Unsupported video source: %s (expected display or camera)", optarg);
+    return false;
+}
+
+static bool
+parse_camera_position(const char *optarg, enum sc_camera_position *position) {
+    if (!strcmp(optarg, "all")) {
+        *position = SC_CAMERA_POSITION_ALL;
+        return true;
+    }
+
+    if (!strcmp(optarg, "front")) {
+        *position = SC_CAMERA_POSITION_FRONT;
+        return true;
+    }
+
+    if (!strcmp(optarg, "back")) {
+        *position = SC_CAMERA_POSITION_BACK;
+        return true;
+    }
+
+    if (!strcmp(optarg, "external")) {
+        *position = SC_CAMERA_POSITION_EXTERNAL;
+        return true;
+    }
+
+    LOGE("Unsupported camera position: %s (expected all, front, back or external)", optarg);
+    return false;
+}
+
+static bool
 parse_time_limit(const char *s, sc_tick *tick) {
     long value;
     bool ok = parse_integer_arg(s, &value, false, 0, 0x7FFFFFFF, "time limit");
@@ -1666,6 +1742,14 @@ parse_args_with_getopt(struct scrcpy_cli_args *args, int argc, char *argv[],
                 break;
             case OPT_DISPLAY_ID:
                 if (!parse_display_id(optarg, &opts->display_id)) {
+                    return false;
+                }
+                break;
+            case OPT_CAMERA_ID:
+                opts->camera_id = optarg;
+                break;
+            case OPT_CAMERA_POSITION:
+                if (!parse_camera_position(optarg, &opts->camera_position)) {
                     return false;
                 }
                 break;
@@ -1950,6 +2034,9 @@ parse_args_with_getopt(struct scrcpy_cli_args *args, int argc, char *argv[],
             case OPT_LIST_DISPLAYS:
                 opts->list_displays = true;
                 break;
+            case OPT_LIST_CAMERAS:
+                opts->list_cameras = true;
+                break;
             case OPT_REQUIRE_AUDIO:
                 opts->require_audio = true;
                 break;
@@ -1966,6 +2053,11 @@ parse_args_with_getopt(struct scrcpy_cli_args *args, int argc, char *argv[],
                 break;
             case OPT_AUDIO_SOURCE:
                 if (!parse_audio_source(optarg, &opts->audio_source)) {
+                    return false;
+                }
+                break;
+            case OPT_VIDEO_SOURCE:
+                if (!parse_video_source(optarg, &opts->video_source)) {
                     return false;
                 }
                 break;
@@ -2020,12 +2112,6 @@ parse_args_with_getopt(struct scrcpy_cli_args *args, int argc, char *argv[],
 
     if (!opts->audio) {
         opts->audio_playback = false;
-    }
-
-    if (!opts->video_playback && !otg) {
-        // If video playback is disabled and OTG are disabled, then there is
-        // no way to control the device.
-        opts->control = false;
     }
 
     if (opts->video && !opts->video_playback && !opts->record_filename
@@ -2128,6 +2214,11 @@ parse_args_with_getopt(struct scrcpy_cli_args *args, int argc, char *argv[],
         if (opts->audio_encoder) {
             LOGW("--audio-encoder is ignored for raw audio codec");
         }
+    }
+
+    if (opts->video_source == SC_VIDEO_SOURCE_CAMERA && opts->control) {
+        LOGI("--video-source=camera disables control");
+        opts->control = false;
     }
 
     if (!opts->control) {

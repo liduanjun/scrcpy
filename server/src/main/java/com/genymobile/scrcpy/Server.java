@@ -1,5 +1,9 @@
 package com.genymobile.scrcpy;
 
+import com.genymobile.scrcpy.video.CameraEncoder;
+import com.genymobile.scrcpy.video.ScreenEncoder;
+import com.genymobile.scrcpy.video.VirtualDisplayEncoder;
+
 import android.os.BatteryManager;
 import android.os.Build;
 
@@ -109,8 +113,10 @@ public final class Server {
                 connection.sendDeviceMeta(Device.getDeviceName());
             }
 
+            DeviceMessageSender sender=null;
             if (control) {
                 Controller controller = new Controller(device, connection, options.getClipboardAutosync(), options.getPowerOn());
+                sender=controller.getSender();
                 device.setClipboardListener(text -> controller.getSender().pushClipboardText(text));
                 asyncProcessors.add(controller);
             }
@@ -130,11 +136,29 @@ public final class Server {
             }
 
             if (video) {
-                Streamer videoStreamer = new Streamer(connection.getVideoFd(), options.getVideoCodec(), options.getSendCodecMeta(),
-                        options.getSendFrameMeta());
-                ScreenEncoder screenEncoder = new ScreenEncoder(device, videoStreamer, options.getVideoBitRate(), options.getMaxFps(),
-                        options.getVideoCodecOptions(), options.getVideoEncoder(), options.getDownsizeOnError());
-                asyncProcessors.add(screenEncoder);
+                Streamer videoStreamer = new Streamer(connection.getVideoFd(), options.getVideoCodec(),
+                        options.getSendCodecMeta(), options.getSendFrameMeta());
+                switch (options.getVideoSource()) {
+                    case DISPLAY:
+                        ScreenEncoder screenEncoder = new ScreenEncoder(device, videoStreamer, options.getVideoBitRate(),
+                                options.getMaxFps(), options.getVideoCodecOptions(), options.getVideoEncoder(),
+                                options.getDownsizeOnError());
+                        asyncProcessors.add(screenEncoder);
+                        break;
+                    case CAMERA:
+                        CameraEncoder cameraEncoder = new CameraEncoder(options.getMaxSize(), options.getCameraId(),
+                                options.getCameraPosition(), videoStreamer, options.getVideoBitRate(), options.getMaxFps(),
+                                options.getVideoCodecOptions(), options.getVideoEncoder(), options.getDownsizeOnError());
+                        asyncProcessors.add(cameraEncoder);
+                        break;
+                    case VIRTUAL:
+                        VirtualDisplayEncoder virtualDisplayEncoder = new VirtualDisplayEncoder(device, sender,
+                                options.getVirtualDisplaySize(), options.getMaxSize(), videoStreamer, options.getVideoBitRate(),
+                                options.getMaxFps(), options.getVideoCodecOptions(), options.getVideoEncoder(),
+                                options.getDownsizeOnError());
+                        asyncProcessors.add(virtualDisplayEncoder);
+                        break;
+                }
             }
 
             Completion completion = new Completion(asyncProcessors.size());
@@ -179,7 +203,7 @@ public final class Server {
 
         Ln.initLogLevel(options.getLogLevel());
 
-        if (options.getListEncoders() || options.getListDisplays()) {
+        if (options.getListEncoders() || options.getListDisplays() || options.getListCameras()) {
             if (options.getCleanup()) {
                 CleanUp.unlinkSelf();
             }
@@ -190,6 +214,9 @@ public final class Server {
             }
             if (options.getListDisplays()) {
                 Ln.i(LogUtils.buildDisplayListMessage());
+            }
+            if (options.getListCameras()) {
+                Ln.i(LogUtils.buildCameraListMessage());
             }
             // Just print the requested data, do not mirror
             return;

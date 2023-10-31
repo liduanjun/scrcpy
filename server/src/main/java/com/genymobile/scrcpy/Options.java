@@ -1,5 +1,8 @@
 package com.genymobile.scrcpy;
 
+import com.genymobile.scrcpy.video.CameraPosition;
+import com.genymobile.scrcpy.video.DisplaySize;
+
 import android.graphics.Rect;
 
 import java.util.List;
@@ -14,6 +17,7 @@ public class Options {
     private int maxSize;
     private VideoCodec videoCodec = VideoCodec.H264;
     private AudioCodec audioCodec = AudioCodec.OPUS;
+    private VideoSource videoSource = VideoSource.DISPLAY;
     private AudioSource audioSource = AudioSource.OUTPUT;
     private int videoBitRate = 8000000;
     private int audioBitRate = 128000;
@@ -23,6 +27,9 @@ public class Options {
     private Rect crop;
     private boolean control = true;
     private int displayId;
+    private String cameraId;
+    private CameraPosition cameraPosition = CameraPosition.ALL;
+    private DisplaySize virtualDisplaySize;
     private boolean showTouches;
     private boolean stayAwake;
     private List<CodecOption> videoCodecOptions;
@@ -38,6 +45,7 @@ public class Options {
 
     private boolean listEncoders;
     private boolean listDisplays;
+    private boolean listCameras;
 
     // Options not used by the scrcpy client, but useful to use scrcpy-server directly
     private boolean sendDeviceMeta = true; // send device name and size
@@ -71,6 +79,10 @@ public class Options {
 
     public AudioCodec getAudioCodec() {
         return audioCodec;
+    }
+
+    public VideoSource getVideoSource() {
+        return videoSource;
     }
 
     public AudioSource getAudioSource() {
@@ -107,6 +119,18 @@ public class Options {
 
     public int getDisplayId() {
         return displayId;
+    }
+
+    public String getCameraId() {
+        return cameraId;
+    }
+
+    public CameraPosition getCameraPosition() {
+        return cameraPosition;
+    }
+
+    public DisplaySize getVirtualDisplaySize() {
+        return virtualDisplaySize;
     }
 
     public boolean getShowTouches() {
@@ -159,6 +183,10 @@ public class Options {
 
     public boolean getListDisplays() {
         return listDisplays;
+    }
+
+    public boolean getListCameras() {
+        return listCameras;
     }
 
     public boolean getSendDeviceMeta() {
@@ -230,6 +258,13 @@ public class Options {
                     }
                     options.audioCodec = audioCodec;
                     break;
+                case "video_source":
+                    VideoSource videoSource = VideoSource.findByName(value);
+                    if (videoSource == null) {
+                        throw new IllegalArgumentException("Video source " + value + " not supported");
+                    }
+                    options.videoSource = videoSource;
+                    break;
                 case "audio_source":
                     AudioSource audioSource = AudioSource.findByName(value);
                     if (audioSource == null) {
@@ -263,6 +298,23 @@ public class Options {
                     break;
                 case "display_id":
                     options.displayId = Integer.parseInt(value);
+                    break;
+                case "camera_id":
+                    options.cameraId = value;
+                    break;
+                case "camera_position":
+                    CameraPosition cameraPosition = CameraPosition.findByName(value);
+                    if (cameraPosition == null) {
+                        throw new IllegalArgumentException("Camera position " + value + " not supported");
+                    }
+                    options.cameraPosition = cameraPosition;
+                    break;
+                case "virtual_display_size":
+                    DisplaySize size = DisplaySize.parse(value);
+                    if (size == null) {
+                        throw new IllegalArgumentException("Virtual display size must have a value");
+                    }
+                    options.virtualDisplaySize = size;
                     break;
                 case "show_touches":
                     options.showTouches = Boolean.parseBoolean(value);
@@ -306,6 +358,9 @@ public class Options {
                 case "list_displays":
                     options.listDisplays = Boolean.parseBoolean(value);
                     break;
+                case "list_cameras":
+                    options.listCameras = Boolean.parseBoolean(value);
+                    break;
                 case "send_device_meta":
                     options.sendDeviceMeta = Boolean.parseBoolean(value);
                     break;
@@ -334,6 +389,19 @@ public class Options {
         }
 
         return options;
+    }
+
+    private static Size parseSize(String size) {
+        if (size.isEmpty()) {
+            return null;
+        }
+        String[] tokens = size.split("x");
+        if (tokens.length != 2) {
+            throw new IllegalArgumentException("Size must be WIDTHxHEIGHT, but got: \"" + size + "\"");
+        }
+        int width = Integer.parseInt(tokens[0]);
+        int height = Integer.parseInt(tokens[1]);
+        return new Size(width, height);
     }
 
     private static Rect parseCrop(String crop) {

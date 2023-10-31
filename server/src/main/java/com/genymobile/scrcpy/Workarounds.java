@@ -7,6 +7,8 @@ import android.content.AttributionSource;
 import android.content.Context;
 import android.content.ContextWrapper;
 import android.content.pm.ApplicationInfo;
+import android.hardware.camera2.CameraManager;
+import android.hardware.display.DisplayManager;
 import android.media.AudioAttributes;
 import android.media.AudioManager;
 import android.media.AudioRecord;
@@ -23,6 +25,8 @@ public final class Workarounds {
 
     private static Class<?> activityThreadClass;
     private static Object activityThread;
+    private static CameraManager cameraManager;
+    private static DisplayManager displayManager;
 
     private Workarounds() {
         // not instantiable
@@ -157,6 +161,15 @@ public final class Workarounds {
     public static void fillBaseContext() {
         try {
             fillActivityThread();
+
+            try {
+                // Hide warnings on XiaoMi devices
+                Class<?> themeManagerStubClass = Class.forName("android.content.res.ThemeManagerStub");
+                Field sResourceField = themeManagerStubClass.getDeclaredField("sResource");
+                sResourceField.setAccessible(true);
+                sResourceField.set(null, null);
+            } catch (ReflectiveOperationException ignore) {
+            }
 
             Method getSystemContextMethod = activityThreadClass.getDeclaredMethod("getSystemContext");
             Context context = (Context) getSystemContextMethod.invoke(activityThread);
@@ -302,4 +315,31 @@ public final class Workarounds {
             throw new RuntimeException("Cannot create AudioRecord");
         }
     }
+
+    public static CameraManager getCameraManager() {
+        if (cameraManager == null) {
+            try {
+                fillBaseContext();
+                cameraManager = CameraManager.class.getDeclaredConstructor(Context.class)
+                        .newInstance(FakeContext.get());
+            } catch (ReflectiveOperationException e) {
+                throw new RuntimeException("Cannot create CameraManager", e);
+            }
+        }
+        return cameraManager;
+    }
+
+    public static DisplayManager getDisplayManager() {
+        if (displayManager == null) {
+            try {
+                fillBaseContext();
+                displayManager = DisplayManager.class.getDeclaredConstructor(Context.class)
+                        .newInstance(FakeContext.get());
+            } catch (ReflectiveOperationException e) {
+                throw new RuntimeException("Cannot create CameraManager", e);
+            }
+        }
+        return displayManager;
+    }
+
 }
